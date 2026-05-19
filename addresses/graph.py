@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from langchain.chat_models import init_chat_model
 from langchain.messages import SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from addresses.config import openrouter_model_id
+from addresses.llm import create_chat_model
 from addresses.state import AgentState
 from addresses.store import AddressStore
 from addresses.tools import create_address_tools
@@ -23,8 +22,9 @@ SYSTEM_PROMPT = """You are a postal address book assistant.
 - `format_address`: mailing layout for one id.
 - `delete_address`: remove an entry by id.
 
-Be concise. Confirm ids before deleting when ambiguous.
-Never invent addresses—always use tools."""
+When the user gives label, street, and city, call `add_address` immediately with those fields.
+Do not ask for fields they already provided. Be concise.
+Confirm ids before deleting when ambiguous. Never invent addresses—always use tools."""
 
 
 def build_address_agent(
@@ -41,15 +41,7 @@ def build_address_agent(
     tools = create_address_tools(store)
     tools_by_name = {t.name: t for t in tools}
 
-    # ChatOpenRouter uses timeout in milliseconds (120_000 = 2 min).
-    # timeout=120 would mean 120ms and triggers long SDK retries.
-    model = init_chat_model(
-        openrouter_model_id(),
-        temperature=0.2,
-        timeout=120_000,
-        max_tokens=4096,
-        max_retries=1,
-    )
+    model = create_chat_model()
     model_with_tools = model.bind_tools(tools)
 
     def llm_call(state: AgentState) -> dict:
