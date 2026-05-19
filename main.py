@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 
 from dotenv import load_dotenv
 from langchain.messages import HumanMessage
@@ -22,6 +23,15 @@ def print_last_message(result: dict) -> None:
 
 def _handle_openrouter_error(exc: BaseException) -> int:
     text = str(exc)
+    if "ReadTimeout" in type(exc).__name__ or "read operation timed out" in text.lower():
+        print(
+            "OpenRouter request timed out (network or provider slow).\n"
+            "Try again, or increase OPENROUTER_TIMEOUT_MS (default 180000).\n"
+            "Quick check: uv run python main.py --check\n",
+            file=sys.stderr,
+        )
+        print(f"Details: {text}", file=sys.stderr)
+        return 3
     if "guardrail" in text.lower() or "data policy" in text.lower():
         print(
             "OpenRouter blocked the request due to account privacy / guardrail settings.\n"
@@ -74,8 +84,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
+    thread_id = f"demo-{uuid.uuid4().hex[:8]}" if args.demo else args.thread
     graph, _store = build_address_agent()
-    config = {"configurable": {"thread_id": args.thread}}
+    config = {"configurable": {"thread_id": thread_id}}
 
     prompts = (
         [
@@ -102,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.flush()
     except Exception as exc:
         name = type(exc).__name__
-        if "NotFound" in name or "OpenRouter" in name:
+        if "NotFound" in name or "OpenRouter" in name or "Timeout" in name:
             return _handle_openrouter_error(exc)
         raise
 
